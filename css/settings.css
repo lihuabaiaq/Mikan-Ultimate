@@ -1,0 +1,151 @@
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #fff5f7;
+  color: #4a5568;
+  padding: 20px;
+}
+
+.container {
+  max-width: 600px;
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 20px;
+  padding: 20px 30px;
+  box-shadow: 0 4px 15px rgba(255, 182, 193, 0.2);
+  border: 1px solid rgba(255, 182, 193, 0.3);
+}
+
+h1 {
+  color: #ff6b8b;
+  text-align: center;
+  border-bottom: 2px solid #ff8fa3;
+  padding-bottom: 10px;
+}
+
+fieldset {
+  border: 1px solid #ffd1dc;
+  border-radius: 15px;
+  margin-bottom: 20px;
+  padding: 20px;
+}
+
+legend {
+  color: #ff8fa3;
+  font-weight: 600;
+  font-size: 1.1em;
+  padding: 0 10px;
+}
+
+fieldset > p {
+  font-size: 0.9em;
+  color: #718096;
+  margin-top: -10px;
+}
+
+.input-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.input-row label {
+  flex-basis: 60%;
+  font-weight: 500;
+}
+
+.input-row input[type="number"] {
+  flex-basis: 35%;
+  border: 1px solid #ffd1dc;
+  border-radius: 10px;
+  padding: 8px 12px;
+  outline: none;
+  transition: all 0.3s ease;
+  width: 80px; /* Fix width */
+}
+
+.input-row input[type="number"]:focus {
+  border-color: #ff8fa3;
+  box-shadow: 0 0 0 3px rgba(255, 143, 163, 0.2);
+}
+
+.checkbox-row {
+  justify-content: flex-start;
+}
+
+.checkbox-row label {
+   flex-basis: auto;
+   margin-right: 20px;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  transform: scale(1.2);
+}
+
+.punish-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.punish-grid span {
+  font-weight: 600;
+  color: #ff8fa3;
+  font-size: 0.9em;
+  text-align: center;
+}
+
+.punish-grid label {
+  font-weight: 500;
+  text-align: center;
+}
+
+.punish-grid input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid #ffd1dc;
+  border-radius: 10px;
+  outline: none;
+  text-align: center;
+}
+
+.button-group {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+button {
+  padding: 10px 25px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1em;
+  transition: all 0.3s ease;
+}
+
+button#saveBtn {
+  background: #ff8fa3;
+  color: white;
+}
+button#saveBtn:hover {
+  background: #ff6b8b;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 143, 163, 0.3);
+}
+
+button#cancelBtn {
+  background: #f1f5f9;
+  color: #4a5568;
+  border: 1px solid #e2e8f0;
+}
+button#cancelBtn:hover {
+  background: #e2e8f0;
+  transform: translateY(-2px);
+}

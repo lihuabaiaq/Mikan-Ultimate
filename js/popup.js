@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const wsUrlInput = document.getElementById('wsUrl');
     const saveSettingsBtn = document.getElementById('saveSettings');
     const stopPulseBtn = document.getElementById('stopPulseBtn');
+    const settingsBtn = document.getElementById('settingsBtn'); // (*** 新增 ***)
     let qrcode = null;
 
     // 加载保存的WebSocket地址
@@ -126,7 +127,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 监听状态更新
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        console.log('[Popup] 收到消息:', message);  // 添加日志
+        console.log('[Popup] 收到消息:', message);
         if (message.type === 'STATUS_UPDATE') {
             updateStatus(message.status);
         }
@@ -162,8 +163,14 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // (*** 新增 ***)
+    // 设置按钮点击事件
+    settingsBtn.addEventListener('click', function() {
+        chrome.runtime.sendMessage({ type: 'OPEN_SETTINGS' });
+    });
+
     // 修改按钮点击处理
     stopPulseBtn.addEventListener('click', function() {
         chrome.runtime.sendMessage({ type: 'DISCONNECT' });
     });
-}); 
+});

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>鞭策酱设置</title>
+  <link rel="stylesheet" href="css/settings.css">
+</head>
+<body>
+  <div class="container">
+    <h1>💗 高级设置</h1>
+    <form id="settingsForm">
+
+      <fieldset>
+        <legend>自动随时间增长</legend>
+        <div class="input-row">
+          <label for="interval">自然增长时间间隔 (秒):</label>
+          <input type="number" id="interval" min="1">
+        </div>
+        <div class="input-row">
+          <label for="baseIncrease">每次提高强度:</label>
+          <input type="number" id="baseIncrease" min="0">
+        </div>
+        <div class="input-row">
+          <label for="extraIncreaseFirst6">前六次额外提高:</label>
+          <input type="number" id="extraIncreaseFirst6" min="0">
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>运行失败惩罚 </legend>
+        <p>当您运行失败时，将按顺序使用以下配置。惩罚级别会在提交成功或刷新页面后重置（除非您在下面关闭了该选项）。</p>
+        <div class="punish-grid">
+          <span>级别</span><span>强度提高</span><span>持续时间 (秒)</span>
+          <label>级别 1</label>
+          <input type="number" id="punishL1Strength" min="0">
+          <input type="number" id="punishL1Duration" min="1">
+          <label>级别 2</label>
+          <input type="number" id="punishL2Strength" min="0">
+          <input type="number" id="punishL2Duration" min="1">
+          <label>级别 3</label>
+          <input type="number" id="punishL3Strength" min="0">
+          <input type="number" id="punishL3Duration" min="1">
+          <label>级别 4</label>
+          <input type="number" id="punishL4Strength" min="0">
+          <input type="number" id="punishL4Duration" min="1">
+          <label>级别 5</label>
+          <input type="number" id="punishL5Strength" min="0">
+          <input type="number" id="punishL5Duration" min="1">
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>失败惩罚</legend>
+        <div class="input-row">
+          <label for="punishSubmitFailStrength">"提交失败"  强度提高:</label>
+          <input type="number" id="punishSubmitFailStrength" min="0">
+        </div>
+        <div class="input-row">
+          <label for="punishSubmitFailDuration">"提交失败" 持续时间:</label>
+          <input type="number" id="punishSubmitFailDuration" min="1">
+        </div>
+        <div class="input-row">
+          <label for="punishPostIncrease">每次惩罚结束后永久增加强度:</label>
+          <input type="number" id="punishPostIncrease" min="0">
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>其他</legend>
+        <div class="input-row">
+          <label for="initialStrength">初始强度 :</label>
+          <input type="number" id="initialStrength" min="0">
+        </div>
+        <div class="input-row">
+          <label for="rewardAmount">运行成功后强度减少:</label>
+          <input type="number" id="rewardAmount" min="0">
+        </div>
+        <div class="input-row checkbox-row">
+          <label for="rewardOncePerProblem">"强度减少" 每题是否生效一次:</label>
+          <input type="checkbox" id="rewardOncePerProblem">
+        </div>
+        <div class="input-row checkbox-row">
+          <label for="pauseButtonEnabled">"停止" 按钮生效:</label>
+          <input type="checkbox" id="pauseButtonEnabled">
+        </div>
+        <div class="input-row checkbox-row">
+          <label for="resetOnSuccess">下一题或提交成功后惩罚级别清零:</label>
+          <input type="checkbox" id="resetOnSuccess">
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>强度增加比率 (乘数)</legend>
+        <div class="input-row">
+          <label for="ratioA">左通道 (A) 强度增加比率:</label>
+          <input type="number" id="ratioA" min="0" step="0.1">
+        </div>
+        <div class="input-row checkbox-row">
+          <label for="randomA">左通道 (A) 随机 (0.5-1.5):</label>
+          <input type="checkbox" id="randomA">
+        </div>
+        <div class="input-row">
+          <label for="ratioB">右通道 (B) 强度增加比率:</label>
+          <input type="number" id="ratioB" min="0" step="0.1">
+        </div>
+        <div class="input-row checkbox-row">
+          <label for="randomB">右通道 (B) 随机 (0.5-1.5):</label>
+          <input type="checkbox" id="randomB">
+        </div>
+      </fieldset>
+
+      <div class="button-group">
+        <button type="button" id="saveBtn">💾 保存</button>
+        <button type="button" id="cancelBtn">❌ 取消</button>
+      </div>
+    </form>
+  </div>
+  <script src="js/settings.js"></script>
+</body>
+</html>

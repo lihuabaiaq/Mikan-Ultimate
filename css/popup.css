@@ -124,6 +124,20 @@ button[disabled] {
   cursor: not-allowed;
 }
 
+/* (*** 新增样式 ***) */
+button.settings-btn {
+  background: #f1f5f9;
+  color: #4a5568;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+button.settings-btn:hover:not([disabled]) {
+  background: #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+/* (*** 样式结束 ***) */
+
 .soft-limit {
   font-size: 12px;
   color: #ff8fa3;
@@ -177,4 +191,4 @@ button[disabled] {
 .settings input {
   height: 30px;
   box-sizing: border-box;
-} 
+}

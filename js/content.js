@@ -1,21 +1,56 @@
 console.log('[Content] 脚本开始加载');
 
 // 状态变量
-let strengthIncreaseInterval = null;
-const STRENGTH_INCREASE_INTERVAL = 30000;  // 每30秒增加一次强度
-const STRENGTH_INCREASE_AMOUNT = 2;        // 每次增加2点强度
+let strengthIncreaseTimeout = null;
+let displayTimerInterval = null;
+let isPaused = false;
+let strengthBeforePause = { A: 0, B: 0 };
+let globalStartTime = 0;
+let pauseStartTime = 0;
+let totalPausedTime = 0;
+let strengthCycleStartTime = 0;
+let strengthCycleTimeRemaining = 0;
+let intervalCount = 0;
+let lastIncreaseNotify = 0;
+let isUIConnected = false; 
 
-// 添加一个用于追踪最近使用过的消息的变量
+// 默认配置，修复启动时的竞态条件
+const DEFAULT_CONFIG = {
+    interval: 30,
+    baseIncrease: 2,
+    extraIncreaseFirst6: 3,
+    punishLevels: [
+        { strength: 20, duration: 3 },
+        { strength: 25, duration: 5 },
+        { strength: 30, duration: 8 },
+        { strength: 40, duration: 10 },
+        { strength: 50, duration: 15 }
+    ],
+    punishSubmitFail: {
+        strength: 50,
+        duration: 15
+    },
+    punishPostIncrease: 20,
+    initialStrength: 0,
+    rewardAmount: 20,
+    rewardOncePerProblem: false,
+    pauseButtonEnabled: true,
+    resetOnSuccess: true,
+    ratioA: 1.0,
+    randomA: false,
+    ratioB: 1.0,
+    randomB: false
+};
+
+let config = { ...DEFAULT_CONFIG }; // 立即使用默认值初始化
+
 let recentMessages = [];
-
-// 为每个通道添加最后更新时间和实际值
 let lastUpdate = {
     A: { time: 0, actualValue: 0 },
     B: { time: 0, actualValue: 0 }
 };
-const UPDATE_THROTTLE = 500; // 500ms内只更新一次
+const UPDATE_THROTTLE = 500;
 
-// 添加惩罚对话集合
 const PUNISHMENT_MESSAGES = [
     "哼哼～这点惩罚可不够呢～想要更多吗？",
     "啊～又做错了呢，该好好惩罚一下了～",
@@ -30,8 +65,6 @@ const PUNISHMENT_MESSAGES = [
     "哎呀～又要惩罚你了呢～",
     "这么喜欢犯错的话，人家就不客气了哦～"
 ];
-
-// 添加奖励对话集合
 const REWARD_MESSAGES = [
     "真棒呢～这次就稍微奖励一下吧～",
     "啊～太厉害了呢～",
@@ -46,8 +79,6 @@ const REWARD_MESSAGES = [
     "做得不错呢～让人家好开心～",
     "真是个优秀的孩子呢～"
 ];
-
-// 修改强度上升的消息数组
 const STRENGTH_INCREASE_MESSAGES = [
     "哼哼～强度要上升了哦～",
     "啊啦～变得更强了呢～还能继续吗？",
@@ -63,14 +94,6 @@ const STRENGTH_INCREASE_MESSAGES = [
     "让人家帮你调高一点呢～"
 ];
 
-// 添加消息历史记录
-const messageHistory = {
-    punishment: [],
-    reward: [],
-    increase: []
-};
-
-// 封装随机消息选择函数
 function getRandomMessage(type) {
     let messages;
     switch(type) {
@@ -84,12 +107,11 @@ function getRandomMessage(type) {
             messages = STRENGTH_INCREASE_MESSAGES;
             break;
     }
-
-    // 直接随机选择一条消息
     return messages[Math.floor(Math.random() * messages.length)];
 }
 
-// 创建强度显示
+
+// 新增：拖动 和 最小化
 function createStrengthDisplay() {
     const display = document.createElement('div');
     display.id = 'strength-display';
@@ -107,46 +129,250 @@ function createStrengthDisplay() {
         box-shadow: 0 4px 15px rgba(255, 182, 193, 0.2);
         backdrop-filter: blur(5px);
         border: 1px solid rgba(255, 182, 193, 0.3);
-        min-width: 150px;
+        min-width: 200px;
         transition: all 0.3s ease;
     `;
 
-    const title = document.createElement('div');
-    title.style.cssText = `
-        font-weight: 600;
-        color: #ff6b8b;
-        margin-bottom: 10px;
-        text-align: center;
-        border-bottom: 1px solid rgba(255, 192, 203, 0.3);
-        padding-bottom: 8px;
-        font-size: 15px;
-        letter-spacing: 1px;
+    // 注入拖动和最小化的 CSS
+    const style = document.createElement('style');
+    style.textContent = `
+        .strength-display-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 192, 203, 0.3);
+            padding-bottom: 8px;
+        }
+        /* (*** 修复 ***) 仅在未最小化时才给body加 margin-bottom */
+        #strength-display:not(.minimized) .strength-display-header {
+            margin-bottom: 10px;
+        }
+        .strength-display-header-title {
+            font-weight: 600;
+            color: #ff6b8b;
+            font-size: 15px;
+            letter-spacing: 1px;
+            cursor: grab;
+            flex-grow: 1;
+            user-select: none;
+        }
+        .strength-display-header-title:active {
+            cursor: grabbing;
+        }
+        #strength-minimize-btn {
+            background: none;
+            border: none;
+            color: #ff8fa3;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 0 5px;
+            line-height: 1;
+        }
+        /* (*** 关键修复 ***) */
+        /* 隐藏新的 "body" 容器，而不是所有子元素 */
+        #strength-display.minimized > #strength-display-body {
+            display: none;
+        }
     `;
-    title.innerHTML = '💗 小玩具状态 💗';
+    document.head.appendChild(style);
 
-    const channelA = createChannelDisplay('A通道', 'strength-a');
-    const channelB = createChannelDisplay('B通道', 'strength-b');
-    const timer = createTimerDisplay();
+    // 创建新的可拖动标题栏
+    const header = document.createElement('div');
+    header.className = 'strength-display-header';
 
-    display.appendChild(title);
-    display.appendChild(channelA);
-    display.appendChild(channelB);
-    display.appendChild(timer);
+    const title = document.createElement('span');
+    title.className = 'strength-display-header-title';
+    title.innerHTML = '💗 状态 💗';
+    
+    const minimizeBtn = document.createElement('button');
+    minimizeBtn.id = 'strength-minimize-btn';
+    minimizeBtn.innerHTML = '—'; // 最小化按钮
+
+    header.appendChild(title);
+    header.appendChild(minimizeBtn);
+    display.appendChild(header);
+    
+
+    // 创建“魔法口袋”（body 容器）
+    const bodyContainer = document.createElement('div');
+    bodyContainer.id = 'strength-display-body';
+    
+    // 最小化逻辑
+    minimizeBtn.onclick = (e) => {
+        e.stopPropagation(); // 防止触发拖动
+        const isMinimized = display.classList.toggle('minimized');
+        minimizeBtn.innerHTML = isMinimized ? '＋' : '—';
+    };
+
+    // 拖动逻辑
+    let isDragging = false;
+    let offsetX, offsetY;
+    let hasMoved = false; 
+
+    title.onmousedown = (e) => {
+        isDragging = true;
+        hasMoved = false; 
+        
+        if (display.style.right) {
+            display.style.left = `${display.offsetLeft}px`;
+            display.style.right = ''; 
+        }
+        
+        offsetX = e.clientX - display.getBoundingClientRect().left;
+        offsetY = e.clientY - display.getBoundingClientRect().top;
+        title.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+
+        document.onmousemove = (moveEvent) => {
+            if (!isDragging) return;
+            hasMoved = true;
+            
+            let newX = moveEvent.clientX - offsetX;
+            let newY = moveEvent.clientY - offsetY;
+
+            newX = Math.max(0, Math.min(newX, window.innerWidth - display.offsetWidth));
+            newY = Math.max(0, Math.min(newY, window.innerHeight - display.offsetHeight));
+
+            display.style.left = `${newX}px`;
+            display.style.top = `${newY}px`;
+        };
+
+        document.onmouseup = () => {
+            isDragging = false;
+            title.style.cursor = 'grab';
+            document.body.style.userSelect = '';
+            document.onmousemove = null;
+            document.onmouseup = null;
+        };
+    };
+    
+    // 初始显示“未连接”，并将其放入 body 容器
+    const disconnectedNotice = document.createElement('div');
+    disconnectedNotice.id = 'connection-status-overlay';
+    disconnectedNotice.textContent = '🔌 未连接...';
+    disconnectedNotice.style.cssText = `
+        color: #e53e3e;
+        font-weight: 500;
+        text-align: center;
+        padding: 10px 0;
+    `;
+    bodyContainer.appendChild(disconnectedNotice); // <-- 放入 body 容器
+
+    display.appendChild(bodyContainer); // <-- 将 body 容器放入 display
     document.body.appendChild(display);
 
-    // 添加悬停效果
     display.onmouseover = () => {
+        if (isDragging) return;
         display.style.transform = 'translateY(2px)';
         display.style.boxShadow = '0 6px 20px rgba(255, 182, 193, 0.3)';
     };
     display.onmouseout = () => {
+        if (isDragging) return;
         display.style.transform = 'translateY(0)';
         display.style.boxShadow = '0 4px 15px rgba(255, 182, 193, 0.2)';
     };
 }
 
+
+// 当连接时，构建完整的UI
+function buildConnectedUI() {
+
+    // 找到 body 容器，而不是 display
+    const bodyContainer = document.getElementById('strength-display-body');
+    if (!bodyContainer) return;
+
+    // 清空 body 容器 (移除“未连接”提示)
+    bodyContainer.innerHTML = '';
+
+    // 创建所有组件
+    const channelA = createChannelDisplay('A通道', 'strength-a');
+    const channelB = createChannelDisplay('B通道', 'strength-b');
+    const timer = createTimerDisplay();
+    
+    // 将所有组件添加到 body 容器
+    bodyContainer.appendChild(channelA);
+    bodyContainer.appendChild(channelB);
+    bodyContainer.appendChild(timer);
+
+    if (config.pauseButtonEnabled) {
+        const pauseButton = document.createElement('button');
+        pauseButton.id = 'pause-button';
+        pauseButton.textContent = '停止';
+        pauseButton.style.cssText = `
+            width: 100%;
+            padding: 8px 12px;
+            margin-top: 10px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            background: #ff8fa3;
+            color: white;
+            font-size: 14px;
+        `;
+        
+        pauseButton.onmouseover = () => {
+            if (!isPaused) {
+                pauseButton.style.background = '#ff6b8b'; 
+            } else {
+                pauseButton.style.background = '#98c379'; 
+            }
+        };
+        pauseButton.onmouseout = () => {
+            if (!isPaused) {
+                pauseButton.style.background = '#ff8fa3'; 
+            } else {
+                pauseButton.style.background = '#b5e895'; 
+            }
+        };
+        
+        pauseButton.onclick = () => {
+            if (isPaused) {
+                resumeTimers();
+            } else {
+                pauseTimers();
+            }
+        };
+        bodyContainer.appendChild(pauseButton); // <-- 放入 body 容器
+    }
+    
+    isUIConnected = true;
+}
+
+// (*** 函数已修改 ***)
+// 当断开连接时，销毁UI，显示“未连接”
+function destroyConnectedUI() {
+    // (*** 修改 ***)
+    // 找到 body 容器
+    const bodyContainer = document.getElementById('strength-display-body');
+    if (!bodyContainer) return;
+
+    // (*** 修改 ***)
+    // 清空 body 容器
+    bodyContainer.innerHTML = '';
+
+    // 添加“未连接”提示
+    const disconnectedNotice = document.createElement('div');
+    disconnectedNotice.id = 'connection-status-overlay';
+    disconnectedNotice.textContent = '🔌 未连接...';
+    disconnectedNotice.style.cssText = `
+        color: #e53e3e;
+        font-weight: 500;
+        text-align: center;
+        padding: 10px 0;
+    `;
+    bodyContainer.appendChild(disconnectedNotice); // <-- 放入 body 容器
+    
+    isUIConnected = false;
+}
+
+
 function createChannelDisplay(label, id) {
     const container = document.createElement('div');
+    //添加 ID 以便销毁
+    container.id = id + '-container'; 
     container.style.cssText = `
         margin: 8px 0;
         display: flex;
@@ -155,11 +381,10 @@ function createChannelDisplay(label, id) {
     `;
 
     const labelSpan = document.createElement('span');
-    // 根据通道设置不同名称
     if (label === 'A通道') {
-        labelSpan.innerHTML = '🌸 前边强度';  // 或 '💗 左边'
+        labelSpan.innerHTML = '🌸 A通道强度';
     } else {
-        labelSpan.innerHTML = '🌺 后边强度';  // 或 '💕 右边'
+        labelSpan.innerHTML = '🌺 B通道强度';
     }
     labelSpan.style.color = '#98c379';
 
@@ -183,6 +408,8 @@ function createChannelDisplay(label, id) {
 
 function createTimerDisplay() {
     const container = document.createElement('div');
+    // 添加 ID 以便销毁
+    container.id = 'timer-container';
     container.style.cssText = `
         margin-top: 12px;
         display: flex;
@@ -193,7 +420,7 @@ function createTimerDisplay() {
     `;
 
     const labelSpan = document.createElement('span');
-    labelSpan.innerHTML = '⏰ 已经玩耍';  // 更可爱的时间标签
+    labelSpan.innerHTML = '⏰ 该题已经使用';
     labelSpan.style.color = '#98c379';
 
     const timeContainer = document.createElement('div');
@@ -223,75 +450,213 @@ function createTimerDisplay() {
     return container;
 }
 
-// 修改强度增长曲线函数
 function calculateStrengthIncrease(elapsed) {
-    const minutes = elapsed / 60000;  // 转换为分钟
+    const minutes = elapsed / 60000;
     let increase;
-    
     if (minutes <= 5) {
-        // 前5分钟，快速起步
-        increase = minutes * 2;  // 每分钟增加2点
+        increase = minutes * 2;
     } else if (minutes <= 15) {
-        // 5-15分钟，加速增长
-        increase = 10 + (minutes - 5) * 3;  // 从10点开始，每分钟增加3点
+        increase = 10 + (minutes - 5) * 3;
     } else {
-        // 15分钟后，指数增长
-        increase = 40 + Math.pow(minutes - 15, 1.5) * 2;  // 从40点开始，指数增长
+        increase = 40 + Math.pow(minutes - 15, 1.5) * 2;
     }
-    
-    // 确保增长不会超过上限
     return Math.min(Math.round(increase), 100);
 }
 
-// 修改 startStrengthIncrease 函数
-function startStrengthIncrease() {
-    if (strengthIncreaseInterval) return;
+// ----------------------------------------------------------------
+// (*** 计时器核心逻辑 ***)
 
-    let startTime = Date.now();
-    let lastIncrease = 0;
+function pauseTimers() {
+    if (isPaused) return;
+    isPaused = true;
+    console.log('[Content] 计时器已暂停');
+
+    const pauseButton = document.getElementById('pause-button');
+    if (pauseButton) {
+        pauseButton.textContent = '恢复';
+        pauseButton.style.background = '#b5e895'; // 绿色
+    }
+
+    strengthBeforePause.A = lastUpdate.A.actualValue;
+    strengthBeforePause.B = lastUpdate.B.actualValue;
+
+    chrome.runtime.sendMessage({ type: 'SET_STRENGTH_COMMAND', A: 0, B: 0 });
+
+    clearInterval(displayTimerInterval);
+    displayTimerInterval = null;
+
+    clearTimeout(strengthIncreaseTimeout); 
+    strengthIncreaseTimeout = null;
+
+    pauseStartTime = Date.now();
+    
+    let timeElapsedInCycle = pauseStartTime - strengthCycleStartTime;
+    strengthCycleTimeRemaining = ((config.interval || 30) * 1000) - timeElapsedInCycle;
+    
+    console.log(`[Content] 暂停。加S周期还剩: ${strengthCycleTimeRemaining}ms`);
+}
+
+function resumeTimers() {
+    if (!isPaused) return;
+    isPaused = false;
+    console.log('[Content] 计时器已恢复');
+
+    const pauseButton = document.getElementById('pause-button');
+    if (pauseButton) {
+        pauseButton.textContent = '停止';
+        pauseButton.style.background = '#ff8fa3'; // 粉色
+    }
+
+    totalPausedTime += (Date.now() - pauseStartTime);
+    pauseStartTime = 0;
+
+    chrome.runtime.sendMessage({ type: 'SET_STRENGTH_COMMAND', A: strengthBeforePause.A, B: strengthBeforePause.B });
+
+    startDisplayTimer();
+    
+    console.log(`[Content] 恢复。在 ${strengthCycleTimeRemaining}ms 后触发下一次加S`);
+    strengthIncreaseTimeout = setTimeout(triggerStrengthIncrease, strengthCycleTimeRemaining);
+}
+
+function startDisplayTimer() {
+    if (displayTimerInterval) clearInterval(displayTimerInterval);
+    
     let timeDisplay = document.getElementById('time-elapsed');
 
-    // 每更新时间显示
-    setInterval(() => {
-        const elapsed = Date.now() - startTime;
+    if (timeDisplay) {
+        const elapsed = Date.now() - globalStartTime - totalPausedTime;
+        timeDisplay.textContent = Math.floor(elapsed / 1000);
+    }
+
+    displayTimerInterval = setInterval(() => {
+        if (!timeDisplay) {
+            timeDisplay = document.getElementById('time-elapsed');
+            if (!timeDisplay) return;
+        }
+        const elapsed = Date.now() - globalStartTime - totalPausedTime;
         timeDisplay.textContent = Math.floor(elapsed / 1000);
     }, 1000);
+}
 
-    // 立即发送第一次脉冲
+function triggerStrengthIncrease() {
+    if (isPaused) return; 
+    
+    intervalCount++; 
+    strengthCycleStartTime = Date.now();
+    const elapsed = Date.now() - globalStartTime - totalPausedTime;
+
+    const newIncrease = calculateStrengthIncrease(elapsed);
+    if (newIncrease > lastIncreaseNotify) {
+        const message = getRandomMessage('increase');
+        showNotification('info', message);
+        lastIncreaseNotify = newIncrease;
+    }
+
+    let amountToIncrease = config.baseIncrease;
+    if (intervalCount <= 6) {
+        amountToIncrease += config.extraIncreaseFirst6;
+    }
+
+    if (typeof config.baseIncrease === 'undefined' || typeof config.extraIncreaseFirst6 === 'undefined') {
+        console.error('[Content] 配置未加载就触发了计时器! 使用默认值 2+3');
+        amountToIncrease = 2 + (intervalCount <= 6 ? 3 : 0);
+    }
+
+    console.log(`[Content] 触发自动增长: 第 ${intervalCount} 次, 基础 ${config.baseIncrease}, 额外 ${intervalCount <= 6 ? config.extraIncreaseFirst6 : 0}, 总 ${amountToIncrease}`);
+
+    chrome.runtime.sendMessage({ 
+        type: 'INCREASE_STRENGTH',
+        amount: amountToIncrease
+    });
+    
+    const intervalMs = (config.interval || 30) * 1000;
+    strengthIncreaseTimeout = setTimeout(triggerStrengthIncrease, intervalMs);
+}
+
+
+function stopAndResetAllTimers() {
+    console.log('[Content] 停止并重置所有计时器和计数器...');
+    
+    clearInterval(displayTimerInterval);
+    clearTimeout(strengthIncreaseTimeout);
+    displayTimerInterval = null;
+    strengthIncreaseTimeout = null;
+
+    globalStartTime = 0;
+    pauseStartTime = 0;
+    totalPausedTime = 0;
+    strengthCycleStartTime = 0;
+    strengthCycleTimeRemaining = 0;
+    
+    intervalCount = 0;
+    lastIncreaseNotify = 0;
+    
+    isPaused = false;
+    
+    const timeDisplay = document.getElementById('time-elapsed');
+    if (timeDisplay) {
+        timeDisplay.textContent = '0';
+    }
+}
+
+function initializeTimers() {
+    if (globalStartTime > 0) {
+        console.log('[Content] 计时器已在运行，跳过初始化');
+        return; 
+    }
+
+    globalStartTime = Date.now();
+    strengthCycleStartTime = Date.now(); 
+
+    startDisplayTimer();
+    
+    const intervalMs = (config.interval || 30) * 1000;
+    console.log(`[Content] 调度第一次强度增长 (在 ${intervalMs}ms 后)`);
+    strengthIncreaseTimeout = setTimeout(triggerStrengthIncrease, intervalMs);
+
     chrome.runtime.sendMessage({ 
         type: 'START_PULSE'
     });
-
-    // 每60秒发送次脉冲
     setInterval(() => {
+        if (isPaused) return; 
         chrome.runtime.sendMessage({ 
             type: 'START_PULSE'
         });
     }, 60000);
-
-    // 定期增加强度，同时显示提示消息
-    strengthIncreaseInterval = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        const newIncrease = calculateStrengthIncrease(elapsed);
-        
-        if (newIncrease > lastIncrease) {
-            const message = getRandomMessage('increase');
-            showNotification('info', message);
-            lastIncrease = newIncrease;
-        }
-
-        chrome.runtime.sendMessage({ 
-            type: 'INCREASE_STRENGTH',
-            amount: STRENGTH_INCREASE_AMOUNT
-        });
-    }, STRENGTH_INCREASE_INTERVAL);
 }
+// ----------------------------------------------------------------
 
 // 监听来自 background 的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'STRENGTH_UPDATE') {
-        updateStrengthWithAnimation(document.getElementById('strength-a'), message.strength.A || 0);
-        updateStrengthWithAnimation(document.getElementById('strength-b'), message.strength.B || 0);
+
+    if (message.type === 'STATUS_UPDATE') {
+        const status = message.status;
+        const isFullyConnected = status.wsConnected && status.clientId && status.targetId;
+
+        if (isFullyConnected) {
+            // 已连接
+            if (!isUIConnected) {
+                // 刚连接上：构建UI并启动计时器
+                console.log('[Content] 状态变为已连接, 构建UI并启动计时器');
+                buildConnectedUI();
+                initializeTimers();
+            }
+            // 持续连接：更新强度
+            const strengthAElement = document.getElementById('strength-a');
+            const strengthBElement = document.getElementById('strength-b');
+            if (strengthAElement && strengthBElement) {
+                updateStrengthWithAnimation(strengthAElement, status.channelStrength.A || 0);
+                updateStrengthWithAnimation(strengthBElement, status.channelStrength.B || 0);
+            }
+        } else {
+            // 未连接
+            if (isUIConnected) {
+                // 刚断开：销毁UI并停止计时器
+                console.log('[Content] 状态变为未连接, 销毁UI并停止计时器');
+                destroyConnectedUI();
+                stopAndResetAllTimers();
+            }
+        }
     }
     else if (message.type === 'SHOW_NOTIFICATION') {
         if (message.notificationType === 'PUNISHMENT') {
@@ -300,9 +665,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             showRewardMessage();
         }
     }
+    else if (message.type === 'STATE_RESET') {
+        console.log('[Content] 收到 STATE_RESET 命令，重启计时器...');
+        // 只有在UI已经连接的情况下才执行重置
+        if (isUIConnected) {
+            stopAndResetAllTimers(); // 停止并清零所有计数器
+            initializeTimers();    // 重新从0开始
+        }
+    }
 });
 
-// 添加提示显示函数
 function showNotification(type, message) {
     const notification = document.createElement('div');
     notification.style.cssText = `
@@ -325,7 +697,6 @@ function showNotification(type, message) {
         backdrop-filter: blur(5px);
     `;
 
-    // 根据类型设置不同的样式
     if (type === 'success') {
         notification.style.background = 'rgba(255, 241, 242, 0.95)';
         notification.style.border = '1px solid #fecdd3';
@@ -345,7 +716,6 @@ function showNotification(type, message) {
 
     notification.textContent = message;
 
-    // 添加动画样式
     const style = document.createElement('style');
     style.textContent = `
         @keyframes notification-slide-in {
@@ -376,21 +746,22 @@ function showNotification(type, message) {
     setTimeout(() => notification.remove(), 3000);
 }
 
-// 修改强度更新函数
 function updateStrengthWithAnimation(element, newValue) {
+    if (!element) return;
+    
     const channel = element.id === 'strength-a' ? 'A' : 'B';
     const now = Date.now();
 
-    // 记录实际值
     lastUpdate[channel].actualValue = newValue;
 
-    // 检查是否需要节流
+    if (isPaused && newValue !== 0) {
+        strengthBeforePause[channel] = newValue;
+    }
+
     if (now - lastUpdate[channel].time < UPDATE_THROTTLE) {
-        // 在节流时间内，设置一个定时器在结束后检查值
         if (!lastUpdate[channel].timeoutId) {
             lastUpdate[channel].timeoutId = setTimeout(() => {
                 lastUpdate[channel].timeoutId = null;
-                // 检查显示值是否与实际值一致
                 const displayValue = parseInt(element.textContent);
                 if (displayValue !== lastUpdate[channel].actualValue) {
                     updateStrengthWithAnimation(element, lastUpdate[channel].actualValue);
@@ -403,14 +774,11 @@ function updateStrengthWithAnimation(element, newValue) {
     const oldValue = parseInt(element.textContent);
     if (oldValue === newValue) return;
 
-    // 更新最后更新时间
     lastUpdate[channel].time = now;
 
-    // 添加缩放动画
     element.style.transform = 'scale(1.2)';
     setTimeout(() => element.style.transform = 'scale(1)', 300);
 
-    // 根据数值变化设置颜色
     if (newValue > oldValue) {
         element.style.color = '#f43f5e';
         element.style.textShadow = '0 0 8px rgba(244, 63, 94, 0.5)';
@@ -419,16 +787,13 @@ function updateStrengthWithAnimation(element, newValue) {
         element.style.textShadow = '0 0 8px rgba(34, 197, 94, 0.5)';
     }
 
-    // 300ms后恢复原始颜色
     setTimeout(() => {
         element.style.color = '#e06c75';
         element.style.textShadow = 'none';
     }, 300);
 
-    // 更新数值
     element.textContent = newValue;
 
-    // 添加波纹效果
     const ripple = document.createElement('span');
     ripple.style.cssText = `
         position: absolute;
@@ -444,7 +809,6 @@ function updateStrengthWithAnimation(element, newValue) {
         animation: ripple 0.6s ease-out;
     `;
 
-    // 添加波纹动画样式
     if (!document.querySelector('#ripple-style')) {
         const style = document.createElement('style');
         style.id = 'ripple-style';
@@ -467,32 +831,35 @@ function updateStrengthWithAnimation(element, newValue) {
     setTimeout(() => ripple.remove(), 600);
 }
 
-// 初始化逻辑
 function initialize() {
     console.log('[Content] 开始初始化');
     
-    // 确保 DOM 已经加载
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeAfterLoad);
-    } else {
-        initializeAfterLoad();
-    }
+    chrome.storage.local.get('config', (data) => {
+        config = { ...DEFAULT_CONFIG, ...data.config }; 
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeAfterLoad);
+        } else {
+            initializeAfterLoad();
+        }
+    });
 }
 
 function initializeAfterLoad() {
     console.log('[Content] DOM已加载，开始创建UI');
     
-    // 检测是否在题目页面
     if (window.location.pathname.includes('/problems/')) {
         console.log('[Content] 检测到题目页面');
-        createStrengthDisplay();
-        startStrengthIncrease();
+        if (!document.getElementById('strength-display')) {
+            createStrengthDisplay();
+        }
+        // 不再立即启动计时器。
+        // 等待来自 background.js 的第一个 'STATUS_UPDATE' 消息。
     } else {
         console.log('[Content] 不是题目页面，跳过初始化');
     }
 }
 
-// 修改显示消息的函数
 function showPunishmentMessage() {
     const message = getRandomMessage('punishment');
     showNotification('error', message);
@@ -503,5 +870,4 @@ function showRewardMessage() {
     showNotification('success', message);
 }
 
-// 启动初始化
 initialize();
